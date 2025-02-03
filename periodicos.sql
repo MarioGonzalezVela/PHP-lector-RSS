@@ -82,15 +82,15 @@ INSERT INTO `elmundo` (`cod`, `titulo`, `link`, `descripcion`, `categoria`, `fPu
 -- Estructura de tabla para la tabla `elpais`
 --
 
-CREATE TABLE `elpais` (
-  `cod` int(11) NOT NULL,
-  `titulo` varchar(200) DEFAULT NULL,
-  `link` text,
-  `descripcion` text,
-  `categoria` varchar(20) DEFAULT NULL,
-  `fPubli` date DEFAULT NULL,
-  `contenido` longtext
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+CREATE TABLE elpais (
+  cod NOT NULL,
+  titulo varchar(200) DEFAULT NULL,
+  link text,
+  descripcion text,
+  categoria varchar(20) DEFAULT NULL,
+  fPubli date DEFAULT NULL,
+  contenido text
+);
 
 --
 -- Volcado de datos para la tabla `elpais`
