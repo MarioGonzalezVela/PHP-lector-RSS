@@ -1,0 +1,12 @@
+{
+  "name": "php-lector-rss",
+  "version": "1.0.0",
+  "description": "Lector de RSS de noticias",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
