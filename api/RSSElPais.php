@@ -2,41 +2,64 @@
 
 require_once "conexionRSS.php";
 
-$sXML = download("http://ep00.epimg.net/rss/elpais/portada.xml");
+// Descargar el XML del feed
+$sXML = download("https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada");
 $oXML = new SimpleXMLElement($sXML);
 
+// Conectar a PostgreSQL
 require_once "conexionBBDD.php";
 
-if (!$link) {
-    die("Conexión a la base de datos PostgreSQL ha fallado");
-} else {
-    $contador = 0;
-    $categoria = ["Política", "Deportes", "Ciencia", "España", "Economía", "Música", "Cine", "Europa", "Justicia"];
-    $categoriaFiltro = "";
+// Preparar la consulta de inserción con parámetros
+$sqlInsert = "INSERT INTO elpais (titulo, link, descripcion, categoria, fpubli, contenido) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (link) DO NOTHING";
 
-    foreach ($oXML->channel->item as $item) {
-        foreach ($item->category as $cat) {
-            if (in_array($cat, $categoria)) {
-                $categoriaFiltro .= "[" . $cat . "]";
-            }
+// Iniciar transacción
+pg_query($link, "BEGIN");
+
+$insertCount = 0; // Contador de inserciones
+$valuesArray = []; // Array para almacenar los parámetros de las consultas
+
+foreach ($oXML->channel->item as $item) {
+    if ($insertCount >= 5) {
+        break; // Detener el procesamiento después de 40 inserciones
+    }
+
+    // Filtrar categorías
+    $categoriaFiltro = '';
+    foreach ($item->category as $category) {
+        if (in_array($category, ["Política", "Deportes", "Ciencia", "España", "Economía", "Música", "Cine", "Europa", "Justicia"])) {
+            $categoriaFiltro = "[" . $category . "]" . $categoriaFiltro;
         }
+    }
 
-        $fPubli = strtotime($item->pubDate);
-        $new_fPubli = date('Y-m-d', $fPubli);
+    // Formatear la fecha
+    $fPubli = strtotime($item->pubDate);
+    $new_fPubli = date('Y-m-d', $fPubli);
 
-        $content = $item->children("content", true);
-        $encoded = $content->encoded;
+    $content = $item->children("content", true);
+    $encoded = (string)$content->encoded;
 
-        $sql = "SELECT link FROM elpais WHERE link = $1";
-        $result = pg_query_params($link, $sql, [$item->link]);
+    // Preparar los valores para la inserción
+    $valuesArray[] = [
+        (string)$item->title,
+        (string)$item->link,
+        (string)$item->description,
+        $categoriaFiltro,
+        $new_fPubli,
+        $encoded
+    ];
 
-        if (pg_num_rows($result) == 0 && !empty($categoriaFiltro)) {
-            $sql = "INSERT INTO elpais (title, link, description, category, pub_date, content) VALUES ($1, $2, $3, $4, $5, $6)";
-            pg_query_params($link, $sql, [$item->title, $item->link, $item->description, $categoriaFiltro, $new_fPubli, $encoded]);
-        }
+    $insertCount++; // Incrementar el contador de inserciones
+}
 
-        $categoriaFiltro = "";
+// Insertar en bloque si hay valores
+if (count($valuesArray) > 0) {
+    foreach ($valuesArray as $values) {
+        pg_query_params($link, $sqlInsert, $values);
     }
 }
 
-pg_close($link);
+// Confirmar la transacción
+pg_query($link, "COMMIT");
+
+// Cerrar la conexión a la base de datos
+#pg_close($link);
