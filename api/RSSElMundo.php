@@ -2,47 +2,64 @@
 
 require_once "conexionRSS.php";
 
-$sXML = download("https://e00-elmundo.uecdn.es/elmundo/rss/espana.xml");
-
+// Descargar el XML del feed
+$sXML = download("https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml");
 $oXML = new SimpleXMLElement($sXML);
 
+// Conectar a PostgreSQL
 require_once "conexionBBDD.php";
 
-if (pg_connection_status($link) !== PGSQL_CONNECTION_OK) {
-    printf("Conexión a el periódico El Mundo ha fallado");
-} else {
+// Preparar la consulta de inserción con parámetros
+$sqlInsert = "INSERT INTO elmundo (titulo, link, descripcion, categoria, fpubli, contenido) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (link) DO NOTHING";
 
-    $contador = 0;
-    $categoria = ["Política", "Deportes", "Ciencia", "España", "Economía", "Música", "Cine", "Europa", "Justicia"];
-    $categoriaFiltro = "";
+// Iniciar transacción
+pg_query($link, "BEGIN");
 
-    foreach ($oXML->channel->item as $item) {
+$insertCount = 0;  // Contador de inserciones
+$valuesArray = []; // Array para almacenar los parámetros de las consultas
 
-        $media = $item->children("media", true);
-        $description = $media->description;
+foreach ($oXML->channel->item as $item) {
+    if ($insertCount >= 5) {
+        break; // Detener el procesamiento después de 40 inserciones
+    }
 
-        for ($i = 0; $i < count($item->category); $i++) {
-            for ($j = 0; $j < count($categoria); $j++) {
-                if ($item->category[$i] == $categoria[$j]) {
-                    $categoriaFiltro = "[" . $categoria[$j] . "]" . $categoriaFiltro;
-                }
-            }
+    // Filtrar categorías
+    $categoriaFiltro = '';
+    foreach ($item->category as $category) {
+        if (in_array($category, ["Política", "Deportes", "Ciencia", "España", "Economía", "Música", "Cine", "Europa", "Justicia"])) {
+            $categoriaFiltro = "[" . $category . "]" . $categoriaFiltro;
         }
+    }
 
-        $fPubli = strtotime($item->pubDate);
-        $new_fPubli = date('Y-m-d', $fPubli);
+    // Formatear la fecha
+    $fPubli     = strtotime($item->pubDate);
+    $new_fPubli = date('Y-m-d', $fPubli);
 
-        $query = "SELECT link FROM elmundo WHERE link = $1";
-        $result = pg_query_params($link, $query, [$item->link]);
+    $content = $item->children("content", true);
+    $encoded = (string) $content->encoded;
 
-        if (pg_num_rows($result) == 0 && $categoriaFiltro !== "") {
-            $insertQuery = "INSERT INTO elmundo (titulo, link, descripcion, categoria, fecha_publicacion, guid) 
-                            VALUES ($1, $2, $3, $4, $5, $6)";
-            $insertParams = [$item->title, $item->link, $description, $categoriaFiltro, $new_fPubli, $item->guid];
+    // Preparar los valores para la inserción
+    $valuesArray[] = [
+        (string) $item->title,
+        (string) $item->link,
+        (string) $item->description,
+        $categoriaFiltro,
+        $new_fPubli,
+        $encoded,
+    ];
 
-            pg_query_params($link, $insertQuery, $insertParams);
-        }
+    $insertCount++; // Incrementar el contador de inserciones
+}
 
-        $categoriaFiltro = "";
+// Insertar en bloque si hay valores
+if (count($valuesArray) > 0) {
+    foreach ($valuesArray as $values) {
+        pg_query_params($link, $sqlInsert, $values);
     }
 }
+
+// Confirmar la transacción
+pg_query($link, "COMMIT");
+
+// Cerrar la conexión a la base de datos
+#pg_close($link);
